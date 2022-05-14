@@ -7,7 +7,7 @@ const MAX_LOOKBACK_BUFFER_LEN: usize = 128;
 const MAX_READ_BUFFER_LEN: usize = 64;
 
 //Storing matches using 2 bytes, there's no point making a match of 2 or less
-const MIN_MATCH_SIZE: usize = 3;
+const MIN_MATCH_SIZE: usize = 4;
 
 const DEBUG: bool = false;
 
@@ -18,12 +18,12 @@ fn read_buffer_to_string(vec: &VecDeque<u8>) -> String {
     String::from_utf8(v).unwrap()
 }
 
-fn decode() {
+fn decode(fname: &str) {
     let mut input_buffer: [u8; 1] = [0b0; 1];
     let mut output_buffer = Vec::<u8>::new();
     let mut read_buffer = VecDeque::<u8>::new();
 
-    let f = File::open("testfile.lizard").unwrap();
+    let f = File::open(format!("{}.lizard", fname)).unwrap();
     let mut reader = BufReader::new(f);
 
     let mut decode_state = DecodeParseState::None;
@@ -131,7 +131,7 @@ fn decode() {
     }
 
     println!("Writing out");
-    let outf = File::create("testfile.unenc.txt").unwrap();
+    let outf = File::create(format!("{}.unenc.txt", fname)).unwrap();
     let mut writer = BufWriter::new(outf);
     read_buffer.make_contiguous();
     output_buffer.extend_from_slice(read_buffer.as_slices().0);
@@ -168,7 +168,7 @@ enum DecodeParseState {
     PartialCommandRead2(u8, u8),
 }
 
-fn encode() {
+fn encode(fname: &str) {
     println!("Lizards!");
 
     let mut input_buffer: [u8; 1] = [0b0; 1];
@@ -176,13 +176,13 @@ fn encode() {
     let mut lookback_buffer = VecDeque::<u8>::new();
 
     //let mut encoded_values: Vec<EncodedValue> = Vec::new();
-    let outf = File::create("testfile.lizard").unwrap();
-    let df = File::create("testfile.dblzd").unwrap();
+    let outf = File::create(format!("{}.lizard", fname)).unwrap();
+    let df = File::create(format!("{}.dblzd", fname)).unwrap();
     let mut writer = BufWriter::new(outf);
     let mut debug_writer = BufWriter::new(df);
     let mut output_stream = OutputStream::new_debug(writer, debug_writer);
 
-    let f = File::open("testfile.txt").unwrap();
+    let f = File::open(format!("{}.txt", fname)).unwrap();
     let mut reader = BufReader::new(f);
 
     //Init read buffer
@@ -222,9 +222,9 @@ fn encode() {
 
 fn main() {
     println!("Encoding!");
-    encode();
+    encode("sample3");
     println!("Decoding!");
-    decode();
+    decode("sample3");
 }
 
 fn find_match(read_buffer: &VecDeque<u8>, lookback_buffer: &VecDeque<u8>) -> EncodedValue {
