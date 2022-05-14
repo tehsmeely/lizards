@@ -11,17 +11,21 @@ const MIN_MATCH_SIZE: usize = 3;
 
 const DEBUG: bool = false;
 
-fn decode() {
-    // Read file byte by byte
-    // If msb is 1, start building OffsetLen
+fn read_buffer_to_string(vec: &VecDeque<u8>) -> String {
+    let mut v = Vec::new();
+    v.extend(vec.as_slices().0);
+    v.extend(vec.as_slices().1);
+    String::from_utf8(v).unwrap()
+}
 
+fn decode() {
     let mut input_buffer: [u8; 1] = [0b0; 1];
+    let mut output_buffer = Vec::<u8>::new();
     let mut read_buffer = VecDeque::<u8>::new();
 
     let f = File::open("testfile.lizard").unwrap();
     let mut reader = BufReader::new(f);
 
-    let control_byte_mask = 0b10000000;
     let mut decode_state = DecodeParseState::None;
 
     loop {
@@ -33,14 +37,17 @@ fn decode() {
             Ok(0) => break,
             Ok(1) => {
                 let v = input_buffer[0];
-                println!("{:#010b}", v);
+                println!("{:#010b} : {:?}", v, String::from_utf8(vec![v]));
                 match decode_state {
                     DecodeParseState::None => {
                         match v >> 6 {
                             0b10 => decode_state = DecodeParseState::PartialCommandRead(v),
                             0b11 => {
                                 let marker = ChunkMarker::from_encoded_u8(v);
-                                decode_state = DecodeParseState::RawByteChunk(marker.len)
+                                decode_state = DecodeParseState::RawByteChunk(
+                                    marker.len,
+                                    RawByteReadOnFinish::Nothing,
+                                )
                             }
                             other => {
                                 panic!("Did not get leading bits expected: {}  ({:#010b}", other, v)
@@ -48,16 +55,25 @@ fn decode() {
                         }
                         //Accept either control byte or chunk marker
                     }
-                    DecodeParseState::RawByteChunk(remaining) => {
+                    DecodeParseState::RawByteChunk(remaining, on_finish) => {
                         //Read u8 as is.
                         // decr [remaining]
                         // if zero, state -> DecodeParseState::None
                         read_buffer.push_back(v);
                         match remaining - 1 {
-                            0 => decode_state = DecodeParseState::None,
-                            decr => decode_state = DecodeParseState::RawByteChunk(decr),
+                            0 => {
+                                match on_finish {
+                                    RawByteReadOnFinish::Nothing => (),
+                                    RawByteReadOnFinish::FinaliseMatch(offset_len) => {
+                                        finalise_match(&mut read_buffer, &offset_len);
+                                    }
+                                }
+                                decode_state = DecodeParseState::None
+                            }
+                            decr => decode_state = DecodeParseState::RawByteChunk(decr, on_finish),
                         }
                     }
+
                     DecodeParseState::PartialCommandRead(first_byte) => {
                         decode_state = DecodeParseState::PartialCommandRead2(first_byte, v);
                     }
@@ -65,14 +81,52 @@ fn decode() {
                         //Expect command byte, build OffsetLen
                         // state -> DecodeParseState::None
                         let offset_len = OffsetLen::of_bytes_new(b0, b1, v);
-                        let values_from_buf: Vec<u8> =
-                            read_buffer.range(offset_len.to_range()).copied().collect();
-                        read_buffer.extend(values_from_buf.iter());
-                        decode_state = DecodeParseState::None;
+                        println!(
+                            "Got Match: {:?}: {:?} ({})",
+                            offset_len,
+                            read_buffer_to_string(&read_buffer),
+                            read_buffer.len()
+                        );
+                        if offset_len.range_end() > read_buffer.len() {
+                            let bytes_needed_to_read = offset_len.range_end() - read_buffer.len();
+                            println!(
+                                "More bytes needed to populate match: {}",
+                                bytes_needed_to_read
+                            );
+                            decode_state = DecodeParseState::RawByteChunk(
+                                bytes_needed_to_read as u8,
+                                RawByteReadOnFinish::FinaliseMatch(offset_len),
+                            );
+                        } else {
+                            finalise_match(&mut read_buffer, &offset_len);
+                            decode_state = DecodeParseState::None;
+                        }
                     }
+                }
+                // We use max "Lookback" buffer len here because the offsets generated by
+                // matching when encoding are from the lookback buffer
+                while read_buffer.len() > MAX_LOOKBACK_BUFFER_LEN {
+                    output_buffer.push(read_buffer.pop_front().unwrap());
                 }
             }
             Ok(n) => panic!("Read more than expected bytes: {}", n),
+        }
+    }
+
+    //Handle final decode state
+    match decode_state {
+        DecodeParseState::None => (),
+        DecodeParseState::RawByteChunk(_, RawByteReadOnFinish::Nothing) => {
+            panic!("Ended parsing file but still just expecting to read raw bytes");
+        }
+        DecodeParseState::RawByteChunk(
+            num_bytes_left,
+            RawByteReadOnFinish::FinaliseMatch(offset_len),
+        ) => {
+            //If we finish the file with a partial match, we can infer there was some repetition
+        }
+        DecodeParseState::PartialCommandRead(_) | DecodeParseState::PartialCommandRead2(_, _) => {
+            panic!("Ended parsing file but still not finished reading command bytes")
         }
     }
 
@@ -80,13 +134,35 @@ fn decode() {
     let outf = File::create("testfile.unenc.txt").unwrap();
     let mut writer = BufWriter::new(outf);
     read_buffer.make_contiguous();
-    writer.write_all(read_buffer.as_slices().0);
+    output_buffer.extend_from_slice(read_buffer.as_slices().0);
+    writer.write_all(&output_buffer);
     println!("Done");
 }
 
+fn finalise_match(read_buffer: &mut VecDeque<u8>, offset_len: &OffsetLen) {
+    let values_from_buf: Vec<u8> = {
+        let range = offset_len.to_range();
+        if range.end > read_buffer.len() {
+            panic!(
+                "Range loaded from file exceeds read_buffer ({:?}):\n{} ({})",
+                offset_len,
+                read_buffer_to_string(&read_buffer),
+                read_buffer.len()
+            );
+        }
+        read_buffer.range(range).copied().collect()
+    };
+    read_buffer.extend(values_from_buf.iter());
+}
+
+#[derive(Debug)]
+enum RawByteReadOnFinish {
+    Nothing,
+    FinaliseMatch(OffsetLen),
+}
 #[derive(Debug)]
 enum DecodeParseState {
-    RawByteChunk(u8),
+    RawByteChunk(u8, RawByteReadOnFinish),
     None,
     PartialCommandRead(u8),
     PartialCommandRead2(u8, u8),
@@ -127,7 +203,7 @@ fn encode() {
         let next_value = find_match(&read_buffer, &lookback_buffer);
         let step_size = match next_value {
             EncodedValue::RawU8(_) => 1,
-            EncodedValue::OffsetLen(OffsetLen { len, offset: _ }) => len as usize,
+            EncodedValue::OffsetLen(OffsetLen { len, .. }) => len as usize,
         };
         //encoded_values.push(next_value);
         output_stream.add(next_value);
@@ -140,15 +216,7 @@ fn encode() {
             true,
         );
     }
-
-    /*
-    println!("Writing out");
-    let outf = File::create("testfile.lizard").unwrap();
-    let mut writer = BufWriter::new(outf);
-    for encoded_value in encoded_values.iter() {
-        writer.write_all(&encoded_value.to_bytes()).unwrap();
-    }
-    */
+    output_stream.finalise();
     println!("Done");
 }
 
@@ -167,6 +235,10 @@ fn find_match(read_buffer: &VecDeque<u8>, lookback_buffer: &VecDeque<u8>) -> Enc
     let mut current_match = (0, Vec::new());
     let mut best_match: Option<(usize, Vec<u8>)> = None;
     for i in 0..total_len {
+        // TODO: Disabled looking ahead into read_buffer because repetitions into it are broken
+        if i >= lookback_buffer.len() {
+            break;
+        }
         //Never start matching when looking at read buffer, or we'll always match read buffer on itself
         if i >= lookback_buffer.len() && current_match.1.is_empty() {
             break;
@@ -197,15 +269,16 @@ fn find_match(read_buffer: &VecDeque<u8>, lookback_buffer: &VecDeque<u8>) -> Enc
             }
         }
     }
-    match &best_match {
+    match best_match {
         None => EncodedValue::RawU8(*read_buffer.front().unwrap()),
         Some((_, matched_values)) if matched_values.len() < MIN_MATCH_SIZE => {
             EncodedValue::RawU8(*read_buffer.front().unwrap())
         }
-        Some((offset, matched_values)) => EncodedValue::OffsetLen(OffsetLen {
-            offset: *offset as u16,
-            len: matched_values.len() as u16,
-        }),
+        Some((offset, matched_values)) => EncodedValue::OffsetLen(OffsetLen::new_with_match(
+            offset as u16,
+            matched_values.len() as u16,
+            Some(matched_values),
+        )),
     }
 }
 
@@ -258,6 +331,7 @@ fn step_buffers(
 struct OffsetLen {
     offset: u16,
     len: u16,
+    matched_bytes: Option<Vec<u8>>,
 }
 
 mod test {
@@ -285,14 +359,21 @@ mod test {
 
 impl OffsetLen {
     const MAX_VALUE: u16 = 2047;
-    fn new(offset: u16, len: u16) -> Self {
+    fn new_with_match(offset: u16, len: u16, matched_bytes: Option<Vec<u8>>) -> Self {
         if offset > Self::MAX_VALUE {
             panic!("Offset above max value: {}", offset);
         }
         if len > Self::MAX_VALUE {
             panic!("Len above max value: {}", len);
         }
-        Self { offset, len }
+        Self {
+            offset,
+            len,
+            matched_bytes,
+        }
+    }
+    fn new(offset: u16, len: u16) -> Self {
+        Self::new_with_match(offset, len, None)
     }
     /* Stuffing into 3 bytes:
     b0        b1        b2
@@ -318,19 +399,35 @@ impl OffsetLen {
         let offset = a & mask;
         let b = ((b1 as u16) << 8) | (b2 as u16);
         let len = b & mask;
-        Self { offset, len }
+        Self {
+            offset,
+            len,
+            matched_bytes: None,
+        }
     }
 
     fn to_bytes_debug(&self) -> Vec<u8> {
-        let s = format!("({},{})", self.offset, self.len);
+        let matched_string = if let Some(bytes) = &self.matched_bytes {
+            match String::from_utf8(bytes.clone()) {
+                Ok(s) => format!("{:?}", s),
+                Err(_) => format!("{:?}", bytes),
+            }
+        } else {
+            String::from("No matched bytes recorded")
+        };
+        let s = format!("({},{}: {})", self.offset, self.len, matched_string);
         s.into_bytes()
     }
 
     fn to_range(&self) -> Range<usize> {
         Range {
             start: self.offset as usize,
-            end: (self.offset + self.len) as usize,
+            end: self.range_end(),
         }
+    }
+
+    fn range_end(&self) -> usize {
+        (self.offset + self.len) as usize
     }
 }
 
