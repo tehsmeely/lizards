@@ -106,8 +106,8 @@ fn find_match(read_buffer: &VecDeque<u8>, lookback_buffer: &VecDeque<u8>) -> Enc
             EncodedValue::RawU8(*read_buffer.front().unwrap())
         }
         Some((offset, matched_values)) => EncodedValue::OffsetLen(OffsetLen::new_with_match(
-            offset as u16,
-            matched_values.len() as u16,
+            offset as u64,
+            matched_values.len() as u64,
             Some(matched_values),
         )),
     }

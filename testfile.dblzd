@@ -1,11 +1,8 @@
-<4>7222(1,3: "222")<12>2
+<26>72222222
 I am Sam
 
-(14,3: "Sam")<1> (9,4: "I am")<6>
-
-That(13,4: " Sam")<7>-I-am!
-(29,15: "That Sam-I-am!\n")<15>I do not like
-t(30,14: "hat Sam-I-am!\n")<7>
-Do you(67,5: " like")<21> green eggs and ham?
-(58,14: "\nI do not like")<6> them,(20,9: " Sam-I-am")<1>.(35,14: "\nI do not like")(63,19: " green eggs and ham")<8>.
+Sam (10,4: "I am")(18,4: "\r\n\r\n")<4>That(14,4: " Sam")<7>-I-am!(33,16: "\nThat Sam-I-am!\r")<17>
+I do not like
+t(35,15: "hat Sam-I-am!\r\n")<8>
+Do you(74,5: " like")<20> green eggs and ham?(18,4: "\r\n\r\n")(66,13: "I do not like")<6> them,(38,9: " Sam-I-am")<1>.(64,15: "\r\nI do not like")(110,19: " green eggs and ham")<9>.
 11111a

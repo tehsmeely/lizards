@@ -9,6 +9,7 @@ pub fn decode(fname: &str) {
     let mut input_buffer: [u8; 1] = [0b0; 1];
     let mut output_buffer = Vec::<u8>::new();
     let mut read_buffer = VecDeque::<u8>::new();
+    let mut offset_len_read_buffer = Vec::<u8>::new();
 
     let f = File::open(format!("{}.lizard", fname)).unwrap();
     let mut reader = BufReader::new(f);
@@ -28,7 +29,15 @@ pub fn decode(fname: &str) {
                 match decode_state {
                     DecodeParseState::None => {
                         match v >> 6 {
-                            0b10 => decode_state = DecodeParseState::PartialCommandRead(v),
+                            0b10 => {
+                                let (num_offset_bytes, num_len_bytes) =
+                                    OffsetLen::read_header_byte(v);
+                                offset_len_read_buffer.clear();
+                                offset_len_read_buffer.push(v);
+                                decode_state = DecodeParseState::OffsetLenRead(
+                                    num_offset_bytes + num_len_bytes,
+                                );
+                            }
                             0b11 => {
                                 let marker = ChunkMarker::from_encoded_u8(v);
                                 decode_state = DecodeParseState::RawByteChunk(
@@ -67,7 +76,7 @@ pub fn decode(fname: &str) {
                     DecodeParseState::PartialCommandRead2(b0, b1) => {
                         //Expect command byte, build OffsetLen
                         // state -> DecodeParseState::None
-                        let offset_len = OffsetLen::of_bytes_new(b0, b1, v);
+                        let offset_len = OffsetLen::of_bytes_new(&vec![b0, b1, v]);
                         println!(
                             "Got Match: {:?}: {:?} ({})",
                             offset_len,
@@ -87,6 +96,17 @@ pub fn decode(fname: &str) {
                         } else {
                             finalise_match(&mut read_buffer, &offset_len);
                             decode_state = DecodeParseState::None;
+                        }
+                    }
+                    DecodeParseState::OffsetLenRead(remaining_bytes) => {
+                        offset_len_read_buffer.push(v);
+                        match remaining_bytes - 1 {
+                            0 => {
+                                let offset_len = OffsetLen::of_bytes_new(&offset_len_read_buffer);
+                                finalise_match(&mut read_buffer, &offset_len);
+                                decode_state = DecodeParseState::None
+                            }
+                            decr => decode_state = DecodeParseState::OffsetLenRead(decr),
                         }
                     }
                 }
@@ -115,6 +135,9 @@ pub fn decode(fname: &str) {
         DecodeParseState::PartialCommandRead(_) | DecodeParseState::PartialCommandRead2(_, _) => {
             panic!("Ended parsing file but still not finished reading command bytes")
         }
+        DecodeParseState::OffsetLenRead(_) => {
+            panic!("Ended parsing file but still not finished reading command bytes")
+        }
     }
 
     println!("Writing out");
@@ -138,6 +161,7 @@ enum DecodeParseState {
     None,
     PartialCommandRead(u8),
     PartialCommandRead2(u8, u8),
+    OffsetLenRead(usize),
 }
 
 fn finalise_match(read_buffer: &mut VecDeque<u8>, offset_len: &OffsetLen) {
