@@ -21,7 +21,7 @@ const MIN_MATCH_SIZE: usize = 4;
 const DEBUG: bool = false;
 
 fn main() {
-    let fname = "sample3";
+    let fname = "war_and_peace";
     println!("Encoding!");
     encode::encode(fname.clone());
     println!("Decoding!");

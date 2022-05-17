@@ -47,7 +47,7 @@ pub fn step_buffers(
                         }
                     }
                 }
-                println!("{:?}::{:?}", lookback_buffer, read_buffer);
+                //println!("{:?}::{:?}", lookback_buffer, read_buffer);
             }
             Ok(n) => {
                 panic!("Sadness, got more than 1 byte on [read] : {}", n)
