@@ -2,12 +2,18 @@ use std::collections::VecDeque;
 use std::fs::File;
 use std::io::{BufRead, BufReader, BufWriter, Read, Write};
 use std::ops::Range;
+use std::path::PathBuf;
 
+use clap::{Args, Parser};
+use log::info;
+
+use file_io::FileInputOutput;
 use offset_len::OffsetLen;
 use output_stream::OutputStream;
 
 mod decode;
 mod encode;
+mod file_io;
 mod helpers;
 mod offset_len;
 mod output_stream;
@@ -20,12 +26,55 @@ const MIN_MATCH_SIZE: usize = 4;
 
 const DEBUG: bool = false;
 
+#[derive(Args, Debug)]
+#[clap(author, version, about, long_about = None)]
+struct CommandLineArgs {
+    #[clap(short, long)]
+    filename: String,
+
+    #[clap(short, long)]
+    output_filename: Option<String>,
+
+    #[clap(short, long)]
+    overwrite: bool,
+}
+
+#[derive(Parser, Debug)]
+enum CommandLineSubCommand {
+    Encode(CommandLineArgs),
+    Decode(CommandLineArgs),
+}
+
+impl CommandLineSubCommand {}
+
 fn main() {
-    let fname = "war_and_peace";
-    println!("Encoding!");
-    encode::encode(fname.clone());
-    println!("Decoding!");
-    decode::decode(fname);
+    let args = CommandLineSubCommand::parse();
+
+    match args {
+        CommandLineSubCommand::Encode(args) => {
+            let file_input_output = FileInputOutput::new_from_unencoded(
+                &args.filename,
+                args.output_filename.as_deref(),
+                true,
+            );
+            file_input_output.input_is_valid(true).unwrap();
+            file_input_output
+                .output_is_valid(true, args.overwrite)
+                .unwrap();
+
+            encode::encode(&file_input_output);
+        }
+        CommandLineSubCommand::Decode(args) => {
+            let file_input_output =
+                FileInputOutput::new_from_encoded(&args.filename, args.output_filename.as_deref());
+
+            file_input_output.input_is_valid(false).unwrap();
+            file_input_output
+                .output_is_valid(false, args.overwrite)
+                .unwrap();
+            decode::decode(&file_input_output);
+        }
+    }
 }
 
 enum EncodedValue {

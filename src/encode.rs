@@ -2,11 +2,12 @@ use std::collections::VecDeque;
 use std::fs::File;
 use std::io::{BufReader, BufWriter};
 
+use crate::file_io::FileInputOutput;
 use crate::offset_len::OffsetLen;
 use crate::output_stream::OutputStream;
 use crate::{helpers, EncodedValue, MAX_READ_BUFFER_LEN, MIN_MATCH_SIZE};
 
-pub fn encode(fname: &str) {
+pub fn encode(file_io: &FileInputOutput) {
     println!("Lizards!");
 
     let mut input_buffer: [u8; 1] = [0b0; 1];
@@ -14,20 +15,26 @@ pub fn encode(fname: &str) {
     let mut lookback_buffer = VecDeque::<u8>::new();
 
     //let mut encoded_values: Vec<EncodedValue> = Vec::new();
-    let outf = File::create(format!("{}.lizard", fname)).unwrap();
-    let df = File::create(format!("{}.dblzd", fname)).unwrap();
+    let outf = File::create(file_io.encoded_filename.as_path()).unwrap();
+    //TODO: Thread through debug_filename being None
     let mut writer = BufWriter::new(outf);
-    let mut debug_writer = BufWriter::new(df);
-    let mut output_stream = OutputStream::new_debug(writer, debug_writer);
+    let mut debug_writer = match file_io.debug_encoded_filename.as_deref() {
+        Some(debug_file_path) => {
+            let df = File::create(debug_file_path).unwrap();
+            Some(BufWriter::new(df))
+        }
+        None => None,
+    };
+    let mut output_stream = OutputStream::new(writer, debug_writer);
 
-    let f = File::open(format!("{}.txt", fname)).unwrap();
-    let mut reader = BufReader::new(f);
+    let input_file = File::open(file_io.unencoded_filename.as_path()).unwrap();
+    let mut input_file_reader = BufReader::new(input_file);
 
     //Init read buffer
     for _i in 0..MAX_READ_BUFFER_LEN {
         helpers::step_buffers(
             1,
-            &mut reader,
+            &mut input_file_reader,
             &mut input_buffer,
             &mut read_buffer,
             &mut lookback_buffer,
@@ -47,7 +54,7 @@ pub fn encode(fname: &str) {
         output_stream.add(next_value);
         helpers::step_buffers(
             step_size,
-            &mut reader,
+            &mut input_file_reader,
             &mut input_buffer,
             &mut read_buffer,
             &mut lookback_buffer,

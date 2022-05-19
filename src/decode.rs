@@ -2,16 +2,17 @@ use std::collections::VecDeque;
 use std::fs::File;
 use std::io::{BufReader, BufWriter, Read, Write};
 
+use crate::file_io::FileInputOutput;
 use crate::offset_len::OffsetLen;
 use crate::{helpers, ChunkMarker, MAX_LOOKBACK_BUFFER_LEN};
 
-pub fn decode(fname: &str) {
+pub fn decode(file_io: &FileInputOutput) {
     let mut input_buffer: [u8; 1] = [0b0; 1];
     let mut output_buffer = Vec::<u8>::new();
     let mut read_buffer = VecDeque::<u8>::new();
     let mut offset_len_read_buffer = Vec::<u8>::new();
 
-    let f = File::open(format!("{}.lizard", fname)).unwrap();
+    let f = File::open(file_io.encoded_filename.as_path()).unwrap();
     let mut reader = BufReader::new(f);
 
     let mut decode_state = DecodeParseState::None;
@@ -141,7 +142,7 @@ pub fn decode(fname: &str) {
     }
 
     println!("Writing out");
-    let outf = File::create(format!("{}.unenc.txt", fname)).unwrap();
+    let outf = File::create(file_io.unencoded_filename.as_path()).unwrap();
     let mut writer = BufWriter::new(outf);
     read_buffer.make_contiguous();
     output_buffer.extend_from_slice(read_buffer.as_slices().0);

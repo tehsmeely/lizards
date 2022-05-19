@@ -13,18 +13,11 @@ impl OutputStream {
     // This max is driven by what we can fit in the chunk marker bytes
     // since we use the two left bits to identify it, the value is 2^6 -1
     const MAX_CHUNK_LEN: usize = 63;
-    pub fn new(output: BufWriter<File>) -> Self {
+    pub fn new(output: BufWriter<File>, debug_output: Option<BufWriter<File>>) -> Self {
         Self {
             buf: Vec::new(),
             output,
-            debug_output: None,
-        }
-    }
-    pub fn new_debug(output: BufWriter<File>, debug_output: BufWriter<File>) -> Self {
-        Self {
-            buf: Vec::new(),
-            output,
-            debug_output: Some(debug_output),
+            debug_output,
         }
     }
 
