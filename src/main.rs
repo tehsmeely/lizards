@@ -15,6 +15,7 @@ mod decode;
 mod encode;
 mod file_io;
 mod helpers;
+mod huffman;
 mod offset_len;
 mod output_stream;
 
