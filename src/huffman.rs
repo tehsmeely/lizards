@@ -69,6 +69,47 @@ pub fn tree_to_code_map(tree: HuffmanTree) -> CodeMap {
     code_map
 }
 
+pub fn pack_to_u8<I: Iterator<Item = u8>>(code_map: CodeMap, input_stream: I) -> Vec<u8> {
+    let mut output = Vec::new();
+    let mut working_bytes: u64 = 0;
+    let mut bits_left = 64;
+    for v in input_stream {
+        let value_bits = code_map.0.get(&v).unwrap();
+        if value_bits.bit_size > bits_left {
+            //Split up. use the [bits_left] left bits from value_bits, then slap what's left
+            // in a new working_bytes
+
+            // if working_bytes = 0b11111100
+            // so bits_left = 2;
+            // and bits_inserting: 0b00011010, len 5
+
+            // working bytes += bits_inserting >> 5 - 2
+            // save working bytes
+            // working_bytes = bits_inserting << (64 - bits_left)
+            // bits_left = 64 - (len - bits_left)
+
+            working_bytes =
+                working_bytes | (value_bits.set_bits >> (value_bits.bit_size - bits_left));
+            output.extend_from_slice(&working_bytes.to_be_bytes());
+            working_bytes = value_bits.set_bits << (64 - bits_left);
+            bits_left = 64 - (value_bits.bit_size - bits_left);
+        } else {
+            // let working_bytes = 0b11100000;
+            // let bits_left = 5;
+            // let bits_inserting = 0b101, len 3
+            // > shift left by (bits_left - len)
+            bits_left -= value_bits.bit_size;
+            let bits_to_add = value_bits.set_bits << bits_left;
+            working_bytes | bits_to_add;
+        }
+
+        if bits_left == 0 {
+            output.extend_from_slice(&working_bytes.to_be_bytes());
+        }
+    }
+    output
+}
+
 impl CodeMap {
     fn new() -> Self {
         CodeMap(HashMap::new())
@@ -117,9 +158,55 @@ impl Bits {
     }
 }
 
+struct BitStream<F: FnMut() -> Option<u8>> {
+    current_byte: u8,
+    byte_pos: u8,
+    read_byte: F,
+}
+
+impl<F: FnMut() -> Option<u8>> BitStream<F> {
+    fn new(read_byte: F) -> Self {
+        Self {
+            current_byte: 0,
+            byte_pos: 8,
+            read_byte,
+        }
+    }
+}
+
+impl<F: FnMut() -> Option<u8>> Iterator for BitStream<F> {
+    type Item = bool;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        // When bytepos = 0, we want to read the MSB, i.e. shift 0b00000001 left to
+        // 0b10000000 (i.e. shift left 7)
+
+        // Allowed byte_pos values are 1 to 8. when we extend past it, we read and reset
+        self.byte_pos += 1;
+
+        if self.byte_pos > 8 {
+            match (self.read_byte)() {
+                Some(new_byte) => {
+                    // Only resetting byte_pos here so if next() is called repeatedly when
+                    // F returns none it won't reset
+                    self.byte_pos = 1;
+                    self.current_byte = new_byte
+                }
+                None => return None,
+            }
+        }
+
+        let mask = 1 << (8 - self.byte_pos);
+        Some(mask & self.current_byte > 0)
+    }
+}
+
 mod test {
-    use crate::huffman::{build_tree, tree_to_code_map, ByteStats};
+    use crate::huffman::{build_tree, tree_to_code_map, BitStream, ByteStats};
     use std::collections::HashMap;
+    use std::io::{BufReader, Read};
+    use std::panic::panic_any;
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     #[test]
     fn round_trip() {
@@ -160,5 +247,53 @@ mod test {
         let output_string = String::from_utf8(output).unwrap();
         assert_eq!(input, &output_string);
         ()
+    }
+
+    #[test]
+    fn bitstream_test() {
+        let test_count = AtomicUsize::new(0);
+        let mut bitstream = BitStream::new(|| match test_count.fetch_add(1, Ordering::Relaxed) {
+            0 => Some(0b10100101),
+            1 => Some(0b11110000),
+            _ => None,
+        });
+        let as_bools: Vec<bool> = bitstream.collect();
+        let expected = {
+            let mut first_byte = vec![true, false, true, false, false, true, false, true];
+            let mut second_byte = vec![true, true, true, true, false, false, false, false];
+            first_byte.append(&mut second_byte);
+            first_byte
+        };
+
+        assert_eq!(expected, as_bools);
+    }
+
+    #[test]
+    fn bitstream_with_reader() {
+        let data: [u8; 2] = [0b11111111, 0b10101010];
+        let mut buffreader = BufReader::new(&data[..]);
+        let mut buf: [u8; 1] = [0];
+
+        let mut bitstream = BitStream::new(|| {
+            let read = buffreader.read(&mut buf);
+            match read {
+                Ok(1) => Some(buf[0]),
+                Ok(0) => None,
+                Ok(invalid_num_bytes) => panic!(
+                    "Bug, read invalid number of bytes for buff: {}",
+                    invalid_num_bytes
+                ),
+                Err(e) => panic!("Error reading bytes: {}", e),
+            }
+        });
+        let as_bools: Vec<bool> = bitstream.collect();
+        let expected = {
+            let mut first_byte = vec![true, true, true, true, true, true, true, true];
+            let mut second_byte = vec![true, false, true, false, true, false, true, false];
+            first_byte.append(&mut second_byte);
+            first_byte
+        };
+
+        assert_eq!(expected, as_bools);
     }
 }
