@@ -6,7 +6,10 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+serde = { version = "1.0.137", features = ["derive"] }
 clap = { version="3.1.18", features = ["derive"]}
 log = "0.4.17"
 priority-queue = "1.2.1"
 dot = "0.1.4"
+rmp = "0.8.11"
+rmp-serde = "1.1.0"

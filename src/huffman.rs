@@ -1,4 +1,5 @@
 use priority_queue::double_priority_queue::DoublePriorityQueue;
+use serde::{Deserialize, Serialize};
 use std::collections::hash_map::Entry::Vacant;
 use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
@@ -12,12 +13,12 @@ pub struct CodeMap {
     end_code: Bits,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
 pub struct HuffmanTree {
     root_node: Option<Box<Node>>,
 }
 
-#[derive(Debug, Hash, PartialEq, Eq)]
+#[derive(Debug, Hash, PartialEq, Eq, Serialize, Deserialize)]
 struct Node {
     value: Option<u8>, //Only leaves have values
     left: Option<Box<Node>>,

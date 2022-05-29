@@ -14,6 +14,7 @@ use output_stream::OutputStream;
 mod decode;
 mod encode;
 mod file_io;
+mod header;
 mod helpers;
 mod huffman;
 mod offset_len;
