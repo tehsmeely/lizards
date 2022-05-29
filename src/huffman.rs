@@ -1,10 +1,16 @@
 use priority_queue::double_priority_queue::DoublePriorityQueue;
+use std::collections::hash_map::Entry::Vacant;
 use std::collections::HashMap;
+use std::fmt::{Debug, Formatter};
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 pub type ByteStats = HashMap<u8, usize>;
 
 #[derive(Debug)]
-pub struct CodeMap(pub HashMap<u8, Bits>);
+pub struct CodeMap {
+    codes: HashMap<u8, Bits>,
+    end_code: Bits,
+}
 
 #[derive(Debug)]
 pub struct HuffmanTree {
@@ -16,9 +22,13 @@ struct Node {
     value: Option<u8>, //Only leaves have values
     left: Option<Box<Node>>,
     right: Option<Box<Node>>,
+
+    // end_node handles the case of reading nonsense bytes at the end of decompression
+    // TODO: Do away with this once we rework to use [NodeType]
+    is_end_node: bool,
 }
 
-#[derive(Clone, Debug, Hash, PartialEq, Eq)]
+#[derive(Clone, Hash, PartialEq, Eq)]
 /// Supports an encoded bit pattern from two bits (e.g. 10) up to 64 bits
 /// [bit_size] informs the user how many on the least signifigant bits of [set_bits] to care about
 pub struct Bits {
@@ -34,11 +44,17 @@ pub fn build_tree(stats: ByteStats) -> HuffmanTree {
         priority_queue.push(Node::new_leaf(*val), *count);
     }
 
+    // add end_node as lowest frequency pair
+    {
+        let (node, count) = priority_queue.pop_min().unwrap();
+        let combined_node = Node::new_vertex(Some(Box::new(node)), Some(Box::new(Node::new_end())));
+        priority_queue.push(combined_node, count);
+    }
+
     // Pick off two lowest, and combine
     while priority_queue.len() > 1 {
         let (node0, count0) = priority_queue.pop_min().unwrap();
         let (node1, count1) = priority_queue.pop_min().unwrap();
-        // By convention, lowest is left
         let combined_node = Node::new_vertex(Some(Box::new(node0)), Some(Box::new(node1)));
         priority_queue.push(combined_node, count0 + count1);
     }
@@ -49,24 +65,51 @@ pub fn build_tree(stats: ByteStats) -> HuffmanTree {
     tree
 }
 
-pub fn tree_to_code_map(tree: HuffmanTree) -> CodeMap {
-    let mut code_map = CodeMap::new();
+pub fn tree_to_code_map(tree: &HuffmanTree) -> CodeMap {
+    let mut codes = HashMap::new();
+    let mut end_code = None;
 
-    fn rec(bits: Bits, node: &Box<Node>, code_map: &mut CodeMap) {
+    fn rec(
+        bits: Bits,
+        node: &Box<Node>,
+        code_map: &mut HashMap<u8, Bits>,
+        mut end_code: &mut Option<Bits>,
+    ) {
         if let Some(value) = node.value {
-            code_map.0.insert(value, bits.clone());
+            code_map.insert(value, bits.clone());
+            return;
+        } else if node.is_end_node {
+            end_code.insert(bits.clone());
             return;
         }
         if let Some(left_node) = &node.left {
-            rec(bits.clone_with_increase(true), left_node, code_map);
+            rec(
+                bits.clone_with_increase(true),
+                left_node,
+                code_map,
+                end_code,
+            );
         }
         if let Some(right_node) = &node.right {
-            rec(bits.clone_with_increase(false), right_node, code_map);
+            rec(
+                bits.clone_with_increase(false),
+                right_node,
+                code_map,
+                end_code,
+            );
         }
     }
 
-    rec(Bits::default(), &tree.root_node.unwrap(), &mut code_map);
-    code_map
+    rec(
+        Bits::default(),
+        &tree.root_node.as_ref().unwrap(),
+        &mut codes,
+        &mut end_code,
+    );
+    CodeMap {
+        codes,
+        end_code: end_code.unwrap(),
+    }
 }
 
 pub fn pack_to_u8<I: Iterator<Item = u8>>(code_map: CodeMap, input_stream: I) -> Vec<u8> {
@@ -74,7 +117,7 @@ pub fn pack_to_u8<I: Iterator<Item = u8>>(code_map: CodeMap, input_stream: I) ->
     let mut working_bytes: u64 = 0;
     let mut bits_left = 64;
     for v in input_stream {
-        let value_bits = code_map.0.get(&v).unwrap();
+        let value_bits = code_map.codes.get(&v).unwrap();
         if value_bits.bit_size > bits_left {
             //Split up. use the [bits_left] left bits from value_bits, then slap what's left
             // in a new working_bytes
@@ -84,13 +127,25 @@ pub fn pack_to_u8<I: Iterator<Item = u8>>(code_map: CodeMap, input_stream: I) ->
             // and bits_inserting: 0b00011010, len 5
 
             // working bytes += bits_inserting >> 5 - 2
+            // i.e. stamp 2msb of inserting: 0b000[11]010
             // save working bytes
+
+            // Then take the remaining bits, slide them all the way left, losing the bits we
+            // previously wrote so: 0b00011[010] -> 0b[010]00000
+            // Rust is not a fan of obliterating bits by over-shifting, so we need to mask
+            // mask = 0b11111000
             // working_bytes = bits_inserting << (64 - bits_left)
             // bits_left = 64 - (len - bits_left)
 
-            working_bytes =
-                working_bytes | (value_bits.set_bits >> (value_bits.bit_size - bits_left));
+            working_bytes |= (value_bits.set_bits >> (value_bits.bit_size - bits_left));
             output.extend_from_slice(&working_bytes.to_be_bytes());
+
+            //
+            println!(
+                "{:b}, shifting left by {}",
+                value_bits.set_bits,
+                (64 - bits_left)
+            );
             working_bytes = value_bits.set_bits << (64 - bits_left);
             bits_left = 64 - (value_bits.bit_size - bits_left);
         } else {
@@ -99,21 +154,59 @@ pub fn pack_to_u8<I: Iterator<Item = u8>>(code_map: CodeMap, input_stream: I) ->
             // let bits_inserting = 0b101, len 3
             // > shift left by (bits_left - len)
             bits_left -= value_bits.bit_size;
-            let bits_to_add = value_bits.set_bits << bits_left;
-            working_bytes | bits_to_add;
+            working_bytes |= value_bits.set_bits << bits_left;
         }
 
         if bits_left == 0 {
             output.extend_from_slice(&working_bytes.to_be_bytes());
+            working_bytes = 0;
+            bits_left = 64;
         }
     }
+    // put as many bits of END_NODE's code on the end
+    if bits_left >= code_map.end_code.bit_size {
+        bits_left -= code_map.end_code.bit_size;
+        let bits_to_add = code_map.end_code.set_bits << bits_left;
+        working_bytes |= bits_to_add;
+    }
+
+    // Now stuff what remains in [working_bytes] into output
+    let bytes_populated = {
+        let floor = (64 - bits_left) / 8;
+        if (64 - bits_left) % 8 != 0 {
+            floor + 1
+        } else {
+            floor
+        }
+    };
+    output.extend_from_slice(&working_bytes.to_be_bytes()[0..bytes_populated]);
     output
 }
 
-impl CodeMap {
-    fn new() -> Self {
-        CodeMap(HashMap::new())
+pub fn unpack_bytes(mut input_bytes: Vec<u8>, tree: &HuffmanTree) -> Vec<u8> {
+    input_bytes.reverse();
+    let bit_stream = BitStream::new(move || input_bytes.pop());
+    let mut output = Vec::new();
+    let root_node = tree.root_node.as_ref().unwrap();
+    let mut current_node = root_node;
+
+    for move_right in bit_stream {
+        current_node = if move_right {
+            current_node.right.as_ref().unwrap()
+        } else {
+            current_node.left.as_ref().unwrap()
+        };
+        if let Some(value) = current_node.value {
+            output.push(value);
+            current_node = root_node;
+        } else if current_node.is_end_node {
+            break;
+        } else {
+            ()
+            // keep going
+        }
     }
+    output
 }
 
 impl Node {
@@ -122,6 +215,7 @@ impl Node {
             value: Some(v),
             left: None,
             right: None,
+            is_end_node: false,
         }
     }
     fn new_vertex(left: Option<Box<Self>>, right: Option<Box<Self>>) -> Self {
@@ -129,6 +223,15 @@ impl Node {
             value: None,
             left,
             right,
+            is_end_node: false,
+        }
+    }
+    fn new_end() -> Self {
+        Self {
+            value: None,
+            left: None,
+            right: None,
+            is_end_node: true,
         }
     }
 }
@@ -142,15 +245,24 @@ impl Default for Bits {
     }
 }
 
+impl Debug for Bits {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Bits")
+            .field("set_bits", &format!("{:064b}", self.set_bits))
+            .field("bit_size", &self.bit_size)
+            .finish()
+    }
+}
+
 impl Bits {
     fn clone_with_increase(&self, is_left: bool) -> Self {
-        // Some {set_bits:"10"; bit_size:2}, should become {set_bits:"110"; bit_size:3}
-        let new_mask = {
-            let one_or_zero = // TODO: this is just bool to int ...
-                if is_left { 0 } else { 1 };
-            one_or_zero << self.bit_size
-        };
-        let new_set_bits = self.set_bits | new_mask;
+        // Some {set_bits:"11"; bit_size:2}, should become {set_bits:"110"; bit_size:3}
+        // i.e. it needs to append to the right
+        let one_or_zero = // TODO: this is just bool to int ...
+            if is_left { 0 } else { 1 };
+
+        let mut new_set_bits = self.set_bits << 1;
+        new_set_bits |= one_or_zero;
         Self {
             set_bits: new_set_bits,
             bit_size: self.bit_size + 1,
@@ -201,50 +313,154 @@ impl<F: FnMut() -> Option<u8>> Iterator for BitStream<F> {
     }
 }
 
+impl HuffmanTree {
+    fn to_dot(&self) {
+        let mut nodes = Vec::new();
+        let mut relationships = Vec::new();
+        let mut node_id = AtomicUsize::new(1);
+
+        fn walk(
+            nodes: &mut Vec<String>,
+            relationships: &mut Vec<String>,
+            node: &Option<Box<Node>>,
+            parent_id: String,
+            node_id: std::rc::Rc<AtomicUsize>,
+            is_left: bool,
+        ) {
+            match node {
+                None => return,
+                Some(node) => {
+                    let this_node_id = format!("node{}", node_id.fetch_add(1, Ordering::Relaxed));
+                    let rel_label = if is_left {
+                        format!("[label=\"left\"]")
+                    } else {
+                        format!("[label=\"right\"]")
+                    };
+                    relationships.push(format!("{} -> {} {};", parent_id, this_node_id, rel_label));
+                    if let Some(value) = node.value {
+                        let as_str = String::from_utf8(vec![value]);
+                        let label = match as_str {
+                            Ok(s) => format!("{}({:#09b})", s, value),
+                            Err(_) => format!("{:#09b}", value),
+                        };
+                        nodes.push(format!("{} [label = \"{}\"];", this_node_id, label));
+                        return;
+                    } else if node.is_end_node {
+                        nodes.push(format!("{} [label = \"END\"];", this_node_id));
+                    } else {
+                        nodes.push(format!("{} [label = \"\"];", this_node_id));
+                    }
+
+                    walk(
+                        nodes,
+                        relationships,
+                        &node.left,
+                        this_node_id.clone(),
+                        node_id.clone(),
+                        true,
+                    );
+                    walk(
+                        nodes,
+                        relationships,
+                        &node.right,
+                        this_node_id.clone(),
+                        node_id.clone(),
+                        false,
+                    );
+                }
+            }
+        }
+        let root_id = String::from("node0");
+        let node_id = std::rc::Rc::new(node_id);
+        walk(
+            &mut nodes,
+            &mut relationships,
+            &self.root_node.as_ref().unwrap().left,
+            root_id.clone(),
+            node_id.clone(),
+            true,
+        );
+        walk(
+            &mut nodes,
+            &mut relationships,
+            &self.root_node.as_ref().unwrap().right,
+            root_id,
+            node_id.clone(),
+            false,
+        );
+
+        let start = "digraph G {";
+        let end = "}";
+
+        let node_definitions = nodes.join("\n");
+        let relationship_definitions = relationships.join("\n");
+        println!(
+            "{}\n\n{}\n\n{}\n{}",
+            start, node_definitions, relationship_definitions, end
+        );
+    }
+}
+
 mod test {
-    use crate::huffman::{build_tree, tree_to_code_map, BitStream, ByteStats};
+    use crate::huffman::{
+        build_tree, pack_to_u8, tree_to_code_map, unpack_bytes, BitStream, ByteStats,
+    };
     use std::collections::HashMap;
     use std::io::{BufReader, Read};
     use std::panic::panic_any;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     #[test]
-    fn round_trip() {
-        // This example string courtesy of the wikipedia page on huffman coding
-        // https://en.wikipedia.org/wiki/Huffman_coding
-        let input = "A_DEAD_DAD_CEDED_A_BAD_BABE_A_BEADED_ABACA_BED";
+    fn smol_round_trip() {
+        let input = "ABA";
 
+        // ENCODE
         let mut stats = ByteStats::new();
         for byte in input.as_bytes().iter() {
             let mut count = stats.entry(*byte).or_insert(0);
             *count += 1;
         }
-
         let tree = build_tree(stats);
-        let code_map = tree_to_code_map(tree);
+        println!("Tree: {:?}", tree);
+        tree.to_dot();
+        let code_map = tree_to_code_map(&tree);
+        println!("Code map: {:?}", code_map);
+        let encoded_bytes = pack_to_u8(code_map, input.as_bytes().iter().cloned());
 
-        let encoded_bytes = {
-            let mut bytes = Vec::new();
-            for byte in input.as_bytes().iter() {
-                let bits = code_map.0.get(byte).unwrap();
-                bytes.push(bits.clone());
-            }
-            bytes
-        };
+        //DECODE
+        let output_bytes = unpack_bytes(encoded_bytes, &tree);
+        let output_string = String::from_utf8(output_bytes).unwrap();
 
-        let inverse_code_map = {
-            let mut map = HashMap::new();
-            for (val, bits) in code_map.0.iter() {
-                map.insert(bits.clone(), *val);
-            }
-            map
-        };
-        let mut output = Vec::new();
-        for bits in encoded_bytes.iter() {
-            let val = inverse_code_map.get(bits).unwrap();
-            output.push(*val);
+        //Check
+        assert_eq!(input, &output_string);
+        ()
+    }
+    #[test]
+    fn round_trip() {
+        // This example string courtesy of the wikipedia page on huffman coding
+        // https://en.wikipedia.org/wiki/Huffman_coding
+        let input = "A_DEAD_DAD_CEDED_A_BAD_BABE_A_BEADED_ABACA_BED";
+
+        // ENCODE
+        let mut stats = ByteStats::new();
+        for byte in input.as_bytes().iter() {
+            let mut count = stats.entry(*byte).or_insert(0);
+            *count += 1;
         }
-        let output_string = String::from_utf8(output).unwrap();
+        let tree = build_tree(stats);
+        tree.to_dot();
+        let code_map = tree_to_code_map(&tree);
+        let encoded_bytes = pack_to_u8(code_map, input.as_bytes().iter().cloned());
+
+        for byte in encoded_bytes.iter() {
+            println!("{:08b}", byte);
+        }
+
+        //DECODE
+        let output_bytes = unpack_bytes(encoded_bytes, &tree);
+        let output_string = String::from_utf8(output_bytes).unwrap();
+
+        //Check
         assert_eq!(input, &output_string);
         ()
     }
