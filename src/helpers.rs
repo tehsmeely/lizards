@@ -2,6 +2,7 @@ use std::collections::VecDeque;
 use std::fs::File;
 use std::io::{BufReader, Read};
 
+use crate::huffman::ByteStats;
 use crate::{MAX_LOOKBACK_BUFFER_LEN, MAX_READ_BUFFER_LEN};
 
 pub fn read_buffer_to_string(vec: &VecDeque<u8>) -> String {
@@ -18,6 +19,7 @@ pub fn step_buffers(
     read_buffer: &mut VecDeque<u8>,
     lookback_buffer: &mut VecDeque<u8>,
     always_drain_read: bool,
+    byte_stats: &mut ByteStats,
 ) {
     for _i in 0..n {
         let read = reader.read(input_buffer);
@@ -37,6 +39,10 @@ pub fn step_buffers(
                 }
             }
             Ok(1) => {
+                {
+                    let mut count = byte_stats.entry(input_buffer[0]).or_insert(0);
+                    *count += 1;
+                }
                 read_buffer.push_back(input_buffer[0]);
                 if read_buffer.len() > MAX_READ_BUFFER_LEN || always_drain_read {
                     let transfer = read_buffer.pop_front();
@@ -47,11 +53,16 @@ pub fn step_buffers(
                         }
                     }
                 }
-                //println!("{:?}::{:?}", lookback_buffer, read_buffer);
             }
             Ok(n) => {
                 panic!("Sadness, got more than 1 byte on [read] : {}", n)
             }
         }
     }
+}
+
+pub fn u8_iter_str<'a, I: Iterator<Item = &'a u8>>(i: I) -> String {
+    i.map(|x| format!("{:08b}", x))
+        .collect::<Vec<String>>()
+        .join(", ")
 }

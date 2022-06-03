@@ -1,8 +1,169 @@
-<26>72222222
+<Header: Tree(size:63), lookback buffer len: 1000, Tree dotgraph: 
+digraph G {
+
+node1 [label = ""];
+node2 [label = ""];
+node3 [label = ""];
+node4 [label = "I 0b01001001"];
+node5 [label = ""];
+node6 [label = ""];
+node7 [label = ""];
+node8 [label = ", 0b00101100"];
+node9 [label = "u 0b01110101"];
+node10 [label = "! 0b00100001"];
+node11 [label = "1 0b00110001"];
+node12 [label = "a 0b01100001"];
+node13 [label = ""];
+node14 [label = ""];
+node15 [label = ""];
+node16 [label = "d 0b01100100"];
+node17 [label = "S 0b01010011"];
+node18 [label = "e 0b01100101"];
+node19 [label = ""];
+node20 [label = ""];
+node21 [label = "h 0b01101000"];
+node22 [label = "g 0b01100111"];
+node23 [label = ""];
+node24 [label = "2 0b00110010"];
+node25 [label = "n 0b01101110"];
+node26 [label = ""];
+node27 [label = ""];
+node28 [label = "  0b00100000"];
+node29 [label = ""];
+node30 [label = "\r 0b00001101"];
+node31 [label = "\n 0b00001010"];
+node32 [label = ""];
+node33 [label = ""];
+node34 [label = "m 0b01101101"];
+node35 [label = ""];
+node36 [label = "o 0b01101111"];
+node37 [label = ""];
+node38 [label = ""];
+node39 [label = ". 0b00101110"];
+node40 [label = ""];
+node41 [label = "? 0b00111111"];
+node42 [label = "y 0b01111001"];
+node43 [label = "l 0b01101100"];
+node44 [label = ""];
+node45 [label = ""];
+node46 [label = "t 0b01110100"];
+node47 [label = "- 0b00101101"];
+node48 [label = ""];
+node49 [label = ""];
+node50 [label = ""];
+node51 [label = "T 0b01010100"];
+node52 [label = "r 0b01110010"];
+node53 [label = "i 0b01101001"];
+node54 [label = ""];
+node55 [label = "k 0b01101011"];
+node56 [label = ""];
+node57 [label = "s 0b01110011"];
+node58 [label = ""];
+node59 [label = "7 0b00110111"];
+node60 [label = ""];
+node61 [label = "D 0b01000100"];
+node62 [label = "END"];
+
+node0 -> node1 [label="0"];
+node1 -> node2 [label="0"];
+node2 -> node3 [label="0"];
+node3 -> node4 [label="0"];
+node3 -> node5 [label="1"];
+node5 -> node6 [label="0"];
+node6 -> node7 [label="0"];
+node7 -> node8 [label="0"];
+node7 -> node9 [label="1"];
+node6 -> node10 [label="1"];
+node5 -> node11 [label="1"];
+node2 -> node12 [label="1"];
+node1 -> node13 [label="1"];
+node13 -> node14 [label="0"];
+node14 -> node15 [label="0"];
+node15 -> node16 [label="0"];
+node15 -> node17 [label="1"];
+node14 -> node18 [label="1"];
+node13 -> node19 [label="1"];
+node19 -> node20 [label="0"];
+node20 -> node21 [label="0"];
+node20 -> node22 [label="1"];
+node19 -> node23 [label="1"];
+node23 -> node24 [label="0"];
+node23 -> node25 [label="1"];
+node0 -> node26 [label="1"];
+node26 -> node27 [label="0"];
+node27 -> node28 [label="0"];
+node27 -> node29 [label="1"];
+node29 -> node30 [label="0"];
+node29 -> node31 [label="1"];
+node26 -> node32 [label="1"];
+node32 -> node33 [label="0"];
+node33 -> node34 [label="0"];
+node33 -> node35 [label="1"];
+node35 -> node36 [label="0"];
+node35 -> node37 [label="1"];
+node37 -> node38 [label="0"];
+node38 -> node39 [label="0"];
+node38 -> node40 [label="1"];
+node40 -> node41 [label="0"];
+node40 -> node42 [label="1"];
+node37 -> node43 [label="1"];
+node32 -> node44 [label="1"];
+node44 -> node45 [label="0"];
+node45 -> node46 [label="0"];
+node45 -> node47 [label="1"];
+node44 -> node48 [label="1"];
+node48 -> node49 [label="0"];
+node49 -> node50 [label="0"];
+node50 -> node51 [label="0"];
+node50 -> node52 [label="1"];
+node49 -> node53 [label="1"];
+node48 -> node54 [label="1"];
+node54 -> node55 [label="0"];
+node54 -> node56 [label="1"];
+node56 -> node57 [label="0"];
+node56 -> node58 [label="1"];
+node58 -> node59 [label="0"];
+node58 -> node60 [label="1"];
+node60 -> node61 [label="0"];
+node60 -> node62 [label="1"];
+}
+Code map: Val : 104 -> Bits { set_bits: "0000000000000000000000000000000000000000000000000000000000001100", bit_size: 5 }
+Val : 32 -> Bits { set_bits: "0000000000000000000000000000000000000000000000000000000000000100", bit_size: 3 }
+Val : 103 -> Bits { set_bits: "0000000000000000000000000000000000000000000000000000000000001101", bit_size: 5 }
+Val : 116 -> Bits { set_bits: "0000000000000000000000000000000000000000000000000000000000011100", bit_size: 5 }
+Val : 45 -> Bits { set_bits: "0000000000000000000000000000000000000000000000000000000000011101", bit_size: 5 }
+Val : 68 -> Bits { set_bits: "0000000000000000000000000000000000000000000000000000000111111110", bit_size: 9 }
+Val : 10 -> Bits { set_bits: "0000000000000000000000000000000000000000000000000000000000001011", bit_size: 4 }
+Val : 84 -> Bits { set_bits: "0000000000000000000000000000000000000000000000000000000001111000", bit_size: 7 }
+Val : 115 -> Bits { set_bits: "0000000000000000000000000000000000000000000000000000000001111110", bit_size: 7 }
+Val : 13 -> Bits { set_bits: "0000000000000000000000000000000000000000000000000000000000001010", bit_size: 4 }
+Val : 117 -> Bits { set_bits: "0000000000000000000000000000000000000000000000000000000000001001", bit_size: 7 }
+Val : 50 -> Bits { set_bits: "0000000000000000000000000000000000000000000000000000000000001110", bit_size: 5 }
+Val : 73 -> Bits { set_bits: "0000000000000000000000000000000000000000000000000000000000000000", bit_size: 4 }
+Val : 121 -> Bits { set_bits: "0000000000000000000000000000000000000000000000000000000011011011", bit_size: 8 }
+Val : 49 -> Bits { set_bits: "0000000000000000000000000000000000000000000000000000000000000011", bit_size: 5 }
+Val : 105 -> Bits { set_bits: "0000000000000000000000000000000000000000000000000000000000111101", bit_size: 6 }
+Val : 111 -> Bits { set_bits: "0000000000000000000000000000000000000000000000000000000000011010", bit_size: 5 }
+Val : 63 -> Bits { set_bits: "0000000000000000000000000000000000000000000000000000000011011010", bit_size: 8 }
+Val : 101 -> Bits { set_bits: "0000000000000000000000000000000000000000000000000000000000000101", bit_size: 4 }
+Val : 110 -> Bits { set_bits: "0000000000000000000000000000000000000000000000000000000000001111", bit_size: 5 }
+Val : 83 -> Bits { set_bits: "0000000000000000000000000000000000000000000000000000000000001001", bit_size: 5 }
+Val : 109 -> Bits { set_bits: "0000000000000000000000000000000000000000000000000000000000001100", bit_size: 4 }
+Val : 33 -> Bits { set_bits: "0000000000000000000000000000000000000000000000000000000000000101", bit_size: 6 }
+Val : 100 -> Bits { set_bits: "0000000000000000000000000000000000000000000000000000000000001000", bit_size: 5 }
+Val : 55 -> Bits { set_bits: "0000000000000000000000000000000000000000000000000000000011111110", bit_size: 8 }
+Val : 107 -> Bits { set_bits: "0000000000000000000000000000000000000000000000000000000000111110", bit_size: 6 }
+Val : 44 -> Bits { set_bits: "0000000000000000000000000000000000000000000000000000000000001000", bit_size: 7 }
+Val : 108 -> Bits { set_bits: "0000000000000000000000000000000000000000000000000000000000110111", bit_size: 6 }
+Val : 46 -> Bits { set_bits: "0000000000000000000000000000000000000000000000000000000001101100", bit_size: 7 }
+Val : 114 -> Bits { set_bits: "0000000000000000000000000000000000000000000000000000000001111001", bit_size: 7 }
+Val : 97 -> Bits { set_bits: "0000000000000000000000000000000000000000000000000000000000000001", bit_size: 3 }
+END: Bits { set_bits: "0000000000000000000000000000000000000000000000000000000111111111", bit_size: 9 }
+><15>11111110011100111001110011100111001110011101010101100001000011100100010010011100101010111010101101001001110010011111111172222222
 I am Sam
 
-Sam (10,4: "I am")(18,4: "\r\n\r\n")<4>That(14,4: " Sam")<7>-I-am!(33,16: "\nThat Sam-I-am!\r")<17>
+Sam (10,4: "I am")(18,4: "\r\n\r\n")<4>11110000110000111100111111111000That(14,4: " Sam")<5>1110100001110100111000001011010111111111-I-am!(33,16: "\nThat Sam-I-am!\r")<11>1011000010001000110101000111111010111001001101111111011111100101101010111110011111111100
 I do not like
-t(35,15: "hat Sam-I-am!\r\n")<8>
-Do you(74,5: " like")<20> green eggs and ham?(18,4: "\r\n\r\n")(66,13: "I do not like")<6> them,(38,9: " Sam-I-am")<1>.(64,15: "\r\nI do not like")(110,19: " green eggs and ham")<9>.
+t(35,15: "hat Sam-I-am!\r\n")<7>10101011111111110110101001101101111010000100111111111100
+Do you(74,5: " like")<13>10001101111100101010101011111000101011010110111111101000010111101000100011000011100110110101111111110000 green eggs and ham?(18,4: "\r\n\r\n")(66,13: "I do not like")<5>1001110001100010111000001000111111111000 them,(38,9: " Sam-I-am")<2>1101100111111111.(64,15: "\r\nI do not like")(110,19: " green eggs and ham")<7>11011001010101100011000110001100011000110011111111110000.
 11111a

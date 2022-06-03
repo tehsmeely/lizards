@@ -37,7 +37,7 @@ struct CommandLineArgs {
     #[clap(short, long)]
     output_filename: Option<String>,
 
-    #[clap(short, long)]
+    #[clap(long)]
     overwrite: bool,
 }
 
@@ -79,7 +79,7 @@ fn main() {
     }
 }
 
-enum EncodedValue {
+pub enum EncodedValue {
     OffsetLen(OffsetLen),
     RawU8(u8),
 }
@@ -99,6 +99,7 @@ struct ChunkMarker {
 }
 
 impl ChunkMarker {
+    pub const MAX_VALUE: usize = 0b00111111;
     fn to_u8(&self) -> u8 {
         let mask = 0b11000000;
         self.len | mask

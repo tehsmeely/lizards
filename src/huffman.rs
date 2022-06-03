@@ -12,6 +12,22 @@ pub struct CodeMap {
     codes: HashMap<u8, Bits>,
     end_code: Bits,
 }
+impl CodeMap {
+    pub fn new(codes: HashMap<u8, Bits>, end_code: Bits) -> Self {
+        Self { codes, end_code }
+    }
+
+    pub fn to_debug_string(&self) -> String {
+        let codes = self
+            .codes
+            .iter()
+            .map(|(val, bits)| format!("Val : {} -> {:?}", val, bits))
+            .collect::<Vec<String>>()
+            .join("\n");
+        let end_code = format!("END: {:?}", self.end_code);
+        format!("{}\n{}", codes, end_code)
+    }
+}
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 pub struct HuffmanTree {
@@ -113,7 +129,7 @@ pub fn tree_to_code_map(tree: &HuffmanTree) -> CodeMap {
     }
 }
 
-pub fn pack_to_u8<I: Iterator<Item = u8>>(code_map: CodeMap, input_stream: I) -> Vec<u8> {
+pub fn pack_to_u8<I: Iterator<Item = u8>>(code_map: &CodeMap, input_stream: I) -> Vec<u8> {
     let mut output = Vec::new();
     let mut working_bytes: u64 = 0;
     let mut bits_left = 64;
@@ -134,21 +150,15 @@ pub fn pack_to_u8<I: Iterator<Item = u8>>(code_map: CodeMap, input_stream: I) ->
             // Then take the remaining bits, slide them all the way left, losing the bits we
             // previously wrote so: 0b00011[010] -> 0b[010]00000
             // Rust is not a fan of obliterating bits by over-shifting, so we need to mask
-            // mask = 0b11111000
             // working_bytes = bits_inserting << (64 - bits_left)
             // bits_left = 64 - (len - bits_left)
 
-            working_bytes |= (value_bits.set_bits >> (value_bits.bit_size - bits_left));
-            output.extend_from_slice(&working_bytes.to_be_bytes());
+            let num_bits_on_new = value_bits.bit_size - bits_left;
 
-            //
-            println!(
-                "{:b}, shifting left by {}",
-                value_bits.set_bits,
-                (64 - bits_left)
-            );
-            working_bytes = value_bits.set_bits << (64 - bits_left);
-            bits_left = 64 - (value_bits.bit_size - bits_left);
+            working_bytes |= (value_bits.set_bits >> num_bits_on_new);
+            output.extend_from_slice(&working_bytes.to_be_bytes());
+            working_bytes = value_bits.set_bits << (64 - num_bits_on_new);
+            bits_left = 64 - num_bits_on_new;
         } else {
             // let working_bytes = 0b11100000;
             // let bits_left = 5;
@@ -156,6 +166,13 @@ pub fn pack_to_u8<I: Iterator<Item = u8>>(code_map: CodeMap, input_stream: I) ->
             // > shift left by (bits_left - len)
             bits_left -= value_bits.bit_size;
             working_bytes |= value_bits.set_bits << bits_left;
+
+            // working = 0;
+            // bit_size = 5
+            // bits_set = 0b000[01000]
+            // --
+            // bits_left -= bits_size --> 59
+            // to_set = 0b01000 << 59
         }
 
         if bits_left == 0 {
@@ -184,9 +201,10 @@ pub fn pack_to_u8<I: Iterator<Item = u8>>(code_map: CodeMap, input_stream: I) ->
     output
 }
 
-pub fn unpack_bytes(mut input_bytes: Vec<u8>, tree: &HuffmanTree) -> Vec<u8> {
-    input_bytes.reverse();
-    let bit_stream = BitStream::new(move || input_bytes.pop());
+pub fn unpack_bytes(mut input_bytes: &Vec<u8>, tree: &HuffmanTree) -> Vec<u8> {
+    //input_bytes.reverse();
+    let mut iter = input_bytes.iter().map(|v| *v);
+    let bit_stream = BitStream::new(move || iter.next());
     let mut output = Vec::new();
     let root_node = tree.root_node.as_ref().unwrap();
     let mut current_node = root_node;
@@ -271,6 +289,17 @@ impl Bits {
     }
 }
 
+impl From<(u8, usize)> for Bits {
+    fn from((bits, bit_size): (u8, usize)) -> Self {
+        //assert no bits set above bit_size
+        //assert_eq!(bits >> bit_size, 0);
+        Self {
+            set_bits: bits as u64,
+            bit_size,
+        }
+    }
+}
+
 struct BitStream<F: FnMut() -> Option<u8>> {
     current_byte: u8,
     byte_pos: u8,
@@ -315,7 +344,19 @@ impl<F: FnMut() -> Option<u8>> Iterator for BitStream<F> {
 }
 
 impl HuffmanTree {
-    fn to_dot(&self) {
+    pub fn size(&self) -> usize {
+        fn walk(node: &Box<Node>, mut count: usize) -> usize {
+            if let Some(left_node) = &node.left {
+                count = walk(left_node, count + 1);
+            }
+            if let Some(right_node) = &node.right {
+                count = walk(right_node, count + 1);
+            }
+            count
+        }
+        walk(self.root_node.as_ref().unwrap(), 1)
+    }
+    pub(crate) fn to_dot(&self) -> String {
         let mut nodes = Vec::new();
         let mut relationships = Vec::new();
         let mut node_id = AtomicUsize::new(1);
@@ -333,17 +374,20 @@ impl HuffmanTree {
                 Some(node) => {
                     let this_node_id = format!("node{}", node_id.fetch_add(1, Ordering::Relaxed));
                     let rel_label = if is_left {
-                        format!("[label=\"left\"]")
+                        format!("[label=\"0\"]")
                     } else {
-                        format!("[label=\"right\"]")
+                        format!("[label=\"1\"]")
                     };
                     relationships.push(format!("{} -> {} {};", parent_id, this_node_id, rel_label));
                     if let Some(value) = node.value {
-                        let as_str = String::from_utf8(vec![value]);
-                        let label = match as_str {
-                            Ok(s) => format!("{}({:#09b})", s, value),
-                            Err(_) => format!("{:#09b}", value),
+                        let as_string = String::from_utf8(vec![value]);
+                        let as_str = match &as_string.as_ref().map(String::as_str) {
+                            Ok("\n") => "\\n",
+                            Ok("\r") => "\\r",
+                            Ok(s) => s,
+                            Err(_) => "",
                         };
+                        let label = format!("{} {:#010b}", as_str, value);
                         nodes.push(format!("{} [label = \"{}\"];", this_node_id, label));
                         return;
                     } else if node.is_end_node {
@@ -395,20 +439,19 @@ impl HuffmanTree {
 
         let node_definitions = nodes.join("\n");
         let relationship_definitions = relationships.join("\n");
-        println!(
+        format!(
             "{}\n\n{}\n\n{}\n{}",
             start, node_definitions, relationship_definitions, end
-        );
+        )
     }
 }
 
 mod test {
     use crate::huffman::{
-        build_tree, pack_to_u8, tree_to_code_map, unpack_bytes, BitStream, ByteStats,
+        build_tree, pack_to_u8, tree_to_code_map, unpack_bytes, BitStream, Bits, ByteStats, CodeMap,
     };
     use std::collections::HashMap;
     use std::io::{BufReader, Read};
-    use std::panic::panic_any;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     #[test]
@@ -423,13 +466,13 @@ mod test {
         }
         let tree = build_tree(stats);
         println!("Tree: {:?}", tree);
-        tree.to_dot();
+        println!("{}", tree.to_dot());
         let code_map = tree_to_code_map(&tree);
         println!("Code map: {:?}", code_map);
-        let encoded_bytes = pack_to_u8(code_map, input.as_bytes().iter().cloned());
+        let encoded_bytes = pack_to_u8(&code_map, input.as_bytes().iter().cloned());
 
         //DECODE
-        let output_bytes = unpack_bytes(encoded_bytes, &tree);
+        let output_bytes = unpack_bytes(&encoded_bytes, &tree);
         let output_string = String::from_utf8(output_bytes).unwrap();
 
         //Check
@@ -449,21 +492,60 @@ mod test {
             *count += 1;
         }
         let tree = build_tree(stats);
-        tree.to_dot();
+        println!("{}", tree.to_dot());
         let code_map = tree_to_code_map(&tree);
-        let encoded_bytes = pack_to_u8(code_map, input.as_bytes().iter().cloned());
+        let encoded_bytes = pack_to_u8(&code_map, input.as_bytes().iter().cloned());
 
         for byte in encoded_bytes.iter() {
             println!("{:08b}", byte);
         }
 
         //DECODE
-        let output_bytes = unpack_bytes(encoded_bytes, &tree);
+        let output_bytes = unpack_bytes(&encoded_bytes, &tree);
         let output_string = String::from_utf8(output_bytes).unwrap();
 
         //Check
         assert_eq!(input, &output_string);
         ()
+    }
+
+    #[test]
+    fn pack_to_u8_big() {
+        let code_map = {
+            let mut codes = HashMap::new();
+            codes.insert(0b00000001, Bits::from((0b00001011, 4)));
+            codes.insert(0b00000010, Bits::from((0b00001001, 4)));
+            codes.insert(0b00000100, Bits::from((0b00111101, 6)));
+            codes.insert(0b00001000, Bits::from((0b10101011, 8)));
+            codes.insert(0b00000101, Bits::from((0b00000001, 3)));
+            let end_code = Bits::from((0b11111111, 8));
+            CodeMap::new(codes, end_code)
+        };
+        let input_bytes: Vec<u8> = vec![
+            0b1,    // 4 [1011_]
+            0b10,   // 8 [10111001]
+            0b100,  // 14 [111101_]
+            0b100,  // 20 [11110111][1101_]
+            0b1,    // 24 [11011011]
+            0b1000, // 32 [10101011]
+            0b1000, // 40 [10101011]
+            0b1000, // 48 [10101011]
+            0b1000, // 56 [10101011]
+            0b10,   // 60 [1001_]
+            0b101,  // 63 [1001001_]
+            0b100,  // 69 [10010011] [11101_]
+        ];
+        let expected_bytes: Vec<&str> = vec![
+            "10111001", "11110111", "11011011", "10101011", "10101011", "10101011", "10101011",
+            // Here we're at the last byte of the u64 and moving onto the next
+            //
+            "10010011", "11101111", "11111000",
+        ];
+        let output = pack_to_u8(&code_map, input_bytes.iter().cloned());
+        assert_eq!(
+            expected_bytes.join(", "),
+            crate::helpers::u8_iter_str(output.iter())
+        );
     }
 
     #[test]
@@ -512,5 +594,39 @@ mod test {
         };
 
         assert_eq!(expected, as_bools);
+    }
+
+    fn bitstream_more_than_u64() {
+        let data: [u8; 9] = [
+            u8::MAX,
+            u8::MAX,
+            u8::MAX,
+            u8::MAX,
+            u8::MAX,
+            u8::MAX,
+            u8::MAX,
+            u8::MAX,
+            u8::MAX,
+        ];
+        let mut buffreader = BufReader::new(&data[..]);
+        let mut buf: [u8; 1] = [0];
+
+        let mut bitstream = BitStream::new(|| {
+            let read = buffreader.read(&mut buf);
+            match read {
+                Ok(1) => Some(buf[0]),
+                Ok(0) => None,
+                Ok(invalid_num_bytes) => panic!(
+                    "Bug, read invalid number of bytes for buff: {}",
+                    invalid_num_bytes
+                ),
+                Err(e) => panic!("Error reading bytes: {}", e),
+            }
+        });
+        let as_bools: Vec<bool> = bitstream.collect();
+        let bool_chunks: Vec<&[bool]> = as_bools.chunks(8).collect();
+        let expected = vec![true, true, true, true, true, true, true, true];
+        assert_eq!(expected, bool_chunks[7]);
+        assert_eq!(expected, bool_chunks[8]);
     }
 }
