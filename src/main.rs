@@ -10,6 +10,7 @@ use log::info;
 use file_io::FileInputOutput;
 use offset_len::OffsetLen;
 use output_stream::OutputStream;
+use std::str::FromStr;
 
 mod decode;
 mod encode;
@@ -29,50 +30,70 @@ const MIN_MATCH_SIZE: usize = 4;
 const DEBUG: bool = false;
 
 #[derive(Args, Debug)]
-#[clap(author, version, about, long_about = None)]
 struct CommandLineArgs {
+    /// Input filename
     #[clap(short, long)]
     filename: String,
 
-    #[clap(short, long)]
+    /// Output filename. If not provided, will be derived based on input filename
+    #[clap(short = 'O', long)]
     output_filename: Option<String>,
 
-    #[clap(long)]
+    /// By default if [output_filename] exists command will not run unless providing [overwrite]
+    #[clap(long, short)]
     overwrite: bool,
 }
 
-#[derive(Parser, Debug)]
-enum CommandLineSubCommand {
-    Encode(CommandLineArgs),
-    Decode(CommandLineArgs),
+#[derive(Args, Debug)]
+struct CompressSpecificArgs {
+    #[clap(flatten)]
+    common: CommandLineArgs,
+
+    /// Max bytes used as a buffer when compressing. Higher size will use more RAM to run but
+    /// should result in better compression
+    #[clap(long)]
+    buffer_size: usize,
+}
+#[derive(Args, Debug)]
+struct DecompressSpecificArgs {
+    #[clap(flatten)]
+    common: CommandLineArgs,
 }
 
-impl CommandLineSubCommand {}
+#[derive(Parser, Debug)]
+#[clap(author, version, about, long_about = None)]
+enum CommandLineSubCommand {
+    /// Compress a file to the lizards format
+    Compress(CompressSpecificArgs),
+
+    /// Decompress a lizards compressed file
+    Decompress(DecompressSpecificArgs),
+}
 
 fn main() {
-    let args = CommandLineSubCommand::parse();
-
-    match args {
-        CommandLineSubCommand::Encode(args) => {
+    match CommandLineSubCommand::parse() {
+        CommandLineSubCommand::Compress(args) => {
             let file_input_output = FileInputOutput::new_from_unencoded(
-                &args.filename,
-                args.output_filename.as_deref(),
+                &args.common.filename,
+                args.common.output_filename.as_deref(),
                 true,
             );
             file_input_output.input_is_valid(true).unwrap();
             file_input_output
-                .output_is_valid(true, args.overwrite)
+                .output_is_valid(true, args.common.overwrite)
                 .unwrap();
 
             encode::encode(&file_input_output);
         }
-        CommandLineSubCommand::Decode(args) => {
-            let file_input_output =
-                FileInputOutput::new_from_encoded(&args.filename, args.output_filename.as_deref());
+        CommandLineSubCommand::Decompress(args) => {
+            let file_input_output = FileInputOutput::new_from_encoded(
+                &args.common.filename,
+                args.common.output_filename.as_deref(),
+            );
 
             file_input_output.input_is_valid(false).unwrap();
             file_input_output
-                .output_is_valid(false, args.overwrite)
+                .output_is_valid(false, args.common.overwrite)
                 .unwrap();
             decode::decode(&file_input_output);
         }
