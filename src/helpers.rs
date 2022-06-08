@@ -1,3 +1,4 @@
+use log::debug;
 use std::collections::VecDeque;
 use std::fs::File;
 use std::io::{BufReader, Read};
@@ -19,14 +20,13 @@ pub fn step_buffers(
     read_buffer: &mut VecDeque<u8>,
     lookback_buffer: &mut VecDeque<u8>,
     always_drain_read: bool,
-    byte_stats: &mut ByteStats,
 ) {
     for _i in 0..n {
         let read = reader.read(input_buffer);
         match read {
             Err(e) => panic!("Error reading file: {}", e),
             Ok(0) => {
-                println!("Got zero bytes");
+                debug!("Got zero bytes");
                 if always_drain_read {
                     // TODO: Unwind duplicated code
                     let transfer = read_buffer.pop_front();
@@ -39,10 +39,6 @@ pub fn step_buffers(
                 }
             }
             Ok(1) => {
-                {
-                    let mut count = byte_stats.entry(input_buffer[0]).or_insert(0);
-                    *count += 1;
-                }
                 read_buffer.push_back(input_buffer[0]);
                 if read_buffer.len() > MAX_READ_BUFFER_LEN || always_drain_read {
                     let transfer = read_buffer.pop_front();

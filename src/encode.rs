@@ -1,6 +1,6 @@
 use std::collections::VecDeque;
 use std::fs::File;
-use std::io::{BufReader, BufWriter};
+use std::io::{BufReader, BufWriter, Seek};
 
 use crate::file_io::FileInputOutput;
 use crate::header::Header;
@@ -9,18 +9,38 @@ use crate::offset_len::OffsetLen;
 use crate::output_stream::OutputStream;
 use crate::{helpers, EncodedValue, MAX_LOOKBACK_BUFFER_LEN, MAX_READ_BUFFER_LEN, MIN_MATCH_SIZE};
 
-pub fn encode(file_io: &FileInputOutput) {
-    println!("Lizards!");
+fn populate_byte_stats(byte_stats: &mut ByteStats, reader: &mut impl std::io::Read) {
+    let mut buffer = [0; 10];
+    loop {
+        match reader.read(&mut buffer) {
+            Ok(0) => return,
+            Ok(n) if n <= 10 => {
+                for b in buffer {
+                    let mut count = byte_stats.entry(b).or_insert(0);
+                    *count += 1;
+                }
+            }
+            Ok(too_many_bytes) => {
+                panic!(
+                    "File reader read more bytes than buffer size, this is a bug. {}",
+                    too_many_bytes
+                );
+            }
+            Err(e) => {
+                panic!("Error when reading file: {}", e);
+            }
+        }
+    }
+}
 
+pub fn encode(file_io: &FileInputOutput) {
     let mut input_buffer: [u8; 1] = [0b0; 1];
     let mut read_buffer = VecDeque::<u8>::new();
     let mut lookback_buffer = VecDeque::<u8>::new();
 
     let mut byte_stats = ByteStats::new();
 
-    //let mut encoded_values: Vec<EncodedValue> = Vec::new();
     let outf = File::create(file_io.encoded_filename.as_path()).unwrap();
-    //TODO: Thread through debug_filename being None
     let mut writer = BufWriter::new(outf);
     let mut debug_writer = match file_io.debug_encoded_filename.as_deref() {
         Some(debug_file_path) => {
@@ -30,11 +50,13 @@ pub fn encode(file_io: &FileInputOutput) {
         None => None,
     };
 
-    //let mut output_stream = OutputStream::new(writer, debug_writer);
-    let mut output_elements: Vec<EncodedValue> = Vec::new();
-
     let input_file = File::open(file_io.unencoded_filename.as_path()).unwrap();
     let mut input_file_reader = BufReader::new(input_file);
+
+    populate_byte_stats(&mut byte_stats, &mut input_file_reader);
+    input_file_reader.rewind();
+
+    let mut output_stream = create_output_stream(byte_stats, writer, debug_writer);
 
     //Init read buffer
     for _i in 0..MAX_READ_BUFFER_LEN {
@@ -45,7 +67,6 @@ pub fn encode(file_io: &FileInputOutput) {
             &mut read_buffer,
             &mut lookback_buffer,
             false,
-            &mut byte_stats,
         );
     }
 
@@ -60,9 +81,8 @@ pub fn encode(file_io: &FileInputOutput) {
             EncodedValue::RawU8(_) => 1,
             EncodedValue::OffsetLen(OffsetLen { len, .. }) => len as usize,
         };
-        //encoded_values.push(next_value);
-        //output_stream.add(next_value);
-        output_elements.push(next_value);
+        output_stream.add(&next_value);
+
         helpers::step_buffers(
             step_size,
             &mut input_file_reader,
@@ -70,10 +90,9 @@ pub fn encode(file_io: &FileInputOutput) {
             &mut read_buffer,
             &mut lookback_buffer,
             true,
-            &mut byte_stats,
         );
     }
-    finalise_output(output_elements, byte_stats, writer, debug_writer);
+    output_stream.finalise();
     {
         let debug_filename = match &file_io.debug_encoded_filename {
             Some(p) => format!(" (and {:?})", p),
@@ -86,21 +105,25 @@ pub fn encode(file_io: &FileInputOutput) {
     }
 }
 
-fn finalise_output(
-    encoded_values: Vec<EncodedValue>,
+fn create_output_stream(
     byte_stats: ByteStats,
     writer: BufWriter<File>,
     debug_writer: Option<BufWriter<File>>,
-) {
+) -> OutputStream<File> {
     let tree = crate::huffman::build_tree(byte_stats);
     let code_map = crate::huffman::tree_to_code_map(&tree);
     let mut output_stream = OutputStream::new(code_map, writer, debug_writer);
     let header = Header::new(tree, MAX_LOOKBACK_BUFFER_LEN as u64);
     output_stream.write_header(&header);
+
+    output_stream
+
+    /*
     for value in encoded_values.iter() {
         output_stream.add(value);
     }
     output_stream.finalise();
+    */
 }
 
 fn find_match(

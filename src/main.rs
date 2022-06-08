@@ -51,7 +51,7 @@ struct CompressSpecificArgs {
 
     /// Max bytes used as a buffer when compressing. Higher size will use more RAM to run but
     /// should result in better compression
-    #[clap(long)]
+    #[clap(long, default_value_t = MAX_LOOKBACK_BUFFER_LEN)]
     buffer_size: usize,
 }
 #[derive(Args, Debug)]
