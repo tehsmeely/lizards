@@ -43,8 +43,8 @@ impl FileInputOutput {
 
     pub fn input_is_valid(&self, is_encode: bool) -> Result<(), String> {
         let input_file_path = match is_encode {
-            true => self.encoded_filename.as_path(),
-            false => self.unencoded_filename.as_path(),
+            true => self.unencoded_filename.as_path(),
+            false => self.encoded_filename.as_path(),
         };
         match input_file_path.exists() {
             true => Ok(()),

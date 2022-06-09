@@ -1,3 +1,4 @@
+use log::debug;
 use std::collections::VecDeque;
 use std::fs::File;
 use std::io::{BufReader, BufWriter, Read, Write};
@@ -24,13 +25,13 @@ pub fn decode(file_io: &FileInputOutput) {
     loop {
         let result = reader.read(&mut input_buffer);
 
-        println!("State: {:?}", decode_state);
+        debug!("State: {:?}", decode_state);
         match result {
             Err(e) => panic!("Error reading file: {}", e),
             Ok(0) => break,
             Ok(1) => {
                 let v = input_buffer[0];
-                println!("{:#010b} : {:?}", v, String::from_utf8(vec![v]));
+                debug!("{:#010b} : {:?}", v, String::from_utf8(vec![v]));
                 match decode_state {
                     DecodeParseState::Start => {
                         header_buffer = vec![v];
@@ -145,7 +146,8 @@ pub fn decode(file_io: &FileInputOutput) {
         }
     }
 
-    println!("Writing out");
+    // TODO, stream output
+    println!("Writing to output file");
     let outf = File::create(file_io.unencoded_filename.as_path()).unwrap();
     let mut writer = BufWriter::new(outf);
     read_buffer.make_contiguous();
